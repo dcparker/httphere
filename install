@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+
+path = ENV['PATH'].split(/:/).each do |path|
+  break path if File.writable?(path)
+end
+puts "Installing to the first location in PATH that permissions allow writing to:\n#{path}"
+
+`cp httphere "#{path}"`
+`chmod +x "#{path}/httphere"`
