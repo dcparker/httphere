@@ -6,6 +6,8 @@ $DEBUG = false
 require 'socket'
 $options = {}
 
+ENV['XDG_DATA_DIRS'] = (ENV['XDG_DATA_DIRS'].to_s.split(/:/) << '/opt/local/share').join(':')
+
 require 'optparse'
 optparse = OptionParser.new do |opts|
   opts.banner = "Usage: #{$0} [options]"
@@ -532,6 +534,7 @@ end
 
 require 'iconv'
 require 'rubygems'
+require 'UniversalDetector'
 require 'shared-mime-info'
 class FileServer < EventParsers::Http11Parser::Request
   # This is where the routing is processed.
@@ -552,9 +555,13 @@ class FileServer < EventParsers::Http11Parser::Request
     connection.halt!
   end
   def respond(status, content_type, body)
-    # Convert to UTF-8
-    ic = Iconv.new('UTF-8', 'WINDOWS-1252')
-    body = ic.iconv(body + ' ')[0..-2]
+    # Convert to UTF-8 if possible
+    chardet = UniversalDetector::chardet(body)
+    if chardet['confidence'] > 0.7
+      charset = chardet['encoding']
+      body = Iconv.conv('utf-8', charset, body)
+    # else # no conversion
+    end
     body_length = body.length
 
     # Send the response!
