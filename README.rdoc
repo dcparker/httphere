@@ -1,6 +1,10 @@
 = httphere
 
-Description goes here.
+httphere is a very small and simple ruby command-line HTTP file server.
+
+= To work on
+
+* Improve content-negotiation behind the scenes. For example, a file found to be "application/x-ruby" could just as well be transferred as "text/plain".
 
 == Note on Patches/Pull Requests
  
@@ -14,4 +18,4 @@ Description goes here.
 
 == Copyright
 
-Copyright (c) 2010 dcparker. See LICENSE for details.
+Copyright (c) 2010 BehindLogic. See LICENSE for details.

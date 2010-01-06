@@ -7,10 +7,9 @@ begin
     gem.name = "httphere"
     gem.summary = %Q{A simple Ruby HTTP file server}
     gem.description = %Q{httphere is a very small and simple ruby command-line HTTP file server.}
-    gem.email = "dcparker@gmail.com"
-    gem.homepage = "http://github.com/dcparker/httphere"
-    gem.authors = ["dcparker"]
-    gem.add_development_dependency "thoughtbot-shoulda", ">= 0"
+    gem.email = "gems@behindlogic.com"
+    gem.homepage = "http://dcparker.github.com/httphere"
+    gem.authors = ["Daniel Parker"]
     # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
   end
   Jeweler::GemcutterTasks.new
