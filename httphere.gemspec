@@ -26,9 +26,18 @@ Gem::Specification.new do |s|
      "Rakefile",
      "VERSION",
      "bin/httphere",
-     "install"
+     "httphere.gemspec"
   ]
   s.homepage = %q{http://dcparker.github.com/httphere}
+  s.post_install_message = %q{
+[34mhttphere wants to detect MIME-types! For this
+you'll need to install the open-source shared-mime-info.
+Assuming you're on a Mac, you can simply run:
+[0m  [31msudo port install shared-mime-info[0m
+
+ * This gem has not been tested on Windows.
+
+}
   s.rdoc_options = ["--charset=UTF-8"]
   s.require_paths = ["lib"]
   s.rubygems_version = %q{1.3.5}
@@ -39,9 +48,15 @@ Gem::Specification.new do |s|
     s.specification_version = 3
 
     if Gem::Version.new(Gem::RubyGemsVersion) >= Gem::Version.new('1.2.0') then
+      s.add_runtime_dependency(%q<shared-mime-info>, [">= 0"])
+      s.add_runtime_dependency(%q<chardet>, [">= 0"])
     else
+      s.add_dependency(%q<shared-mime-info>, [">= 0"])
+      s.add_dependency(%q<chardet>, [">= 0"])
     end
   else
+    s.add_dependency(%q<shared-mime-info>, [">= 0"])
+    s.add_dependency(%q<chardet>, [">= 0"])
   end
 end
 

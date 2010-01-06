@@ -10,6 +10,9 @@ begin
     gem.email = "gems@behindlogic.com"
     gem.homepage = "http://dcparker.github.com/httphere"
     gem.authors = ["Daniel Parker"]
+    gem.add_dependency 'shared-mime-info'
+    gem.add_dependency 'chardet'
+    gem.post_install_message = "\n\033[34mhttphere wants to detect MIME-types! For this\nyou'll need to install the open-source shared-mime-info.\nAssuming you're on a Mac, you can simply run:\n\033[0m  \033[31msudo port install shared-mime-info\033[0m\n\n * This gem has not been tested on Windows.\n\n"
     # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
   end
   Jeweler::GemcutterTasks.new
