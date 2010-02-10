@@ -554,8 +554,14 @@ class FileServer < EventParsers::Http11Parser::Request
       file_body = File.read(filename)
 
       # If .markdown, render as Markdown
-      if content_type == 'text/plain' && file_extension == 'markdown'
+      if file_extension == 'markdown'
         file_body = Renderers::Markdown.render_content(file_body)
+        content_type = 'text/html'
+      end
+
+      # If .textile, render as Textile
+      if file_extension == 'textile'
+        file_body = Renderers::Textile.render_content(file_body)
         content_type = 'text/html'
       end
 

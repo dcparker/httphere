@@ -1,7 +1,9 @@
 module Renderers
   class Textile
     def self.render_content(content)
-      raise "Textile is not implemented yet."
+      require 'rubygems'
+      require 'redcloth'
+      RedCloth.new(content).to_html
     end
   end
 end
