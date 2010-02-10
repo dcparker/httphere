@@ -2,6 +2,12 @@
 
 httphere is a very small and simple ruby command-line HTTP file server.
 
+== Features
+
+* Serves any file found at the current path, simply the content-type determined by shared-mime-types, and the content of the file.
+* Defaults to index.* for a root request.
+* Renders *.markdown as Markdown (html).
+
 = To work on
 
 * Improve content-negotiation behind the scenes. For example, a file found to be "application/x-ruby" could just as well be transferred as "text/plain".

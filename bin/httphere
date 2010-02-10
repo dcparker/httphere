@@ -534,6 +534,10 @@ end
 
 require 'iconv'
 require 'rubygems'
+module Renderers
+  autoload :Markdown, 'httphere/markdown'
+  autoload :Textile,  'httphere/textile'
+end
 require 'UniversalDetector'
 require 'shared-mime-info'
 class FileServer < EventParsers::Http11Parser::Request
@@ -541,9 +545,21 @@ class FileServer < EventParsers::Http11Parser::Request
   def process
     # Get the filename desired
     filename = resource_uri.sub(/^\//,'')
+    # Default to any file named index.*
+    filename = Dir["index.*"].first if filename.to_s == '' && Dir["index.*"].length > 0
+    file_extension = (filename.match(/\.([^\.]+)$/) || [])[1]
+
     if File.exists?(filename) && !File.directory?(filename)
       content_type = MIME.check(filename).type
       file_body = File.read(filename)
+
+      # If .markdown, render as Markdown
+      if content_type == 'text/plain' && file_extension == 'markdown'
+        file_body = Renderers::Markdown.render_content(file_body)
+        content_type = 'text/html'
+      end
+
+      # Send Response
       respond!('200 Ok', content_type, file_body)
     else
       respond!('400 Not Found', 'text/plain', "Could not find file: '#{resource_uri}'")
