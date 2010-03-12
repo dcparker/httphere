@@ -1,7 +1,19 @@
 #!/usr/bin/env ruby
 
-$VERSION = '0.0.1'
+$VERSION = File.read(File.dirname(__FILE__) + '/../VERSION').chomp
 $DEBUG = false
+if $DEBUG
+  require 'benchmark'
+  require 'rubygems'
+  require 'ruby-debug'
+end
+def log(*msgs)
+  msgs.each do |msg|
+    $stdout << msg
+  end
+  $stdout.flush
+  true
+end
 
 require 'socket'
 $options = {}
@@ -22,6 +34,23 @@ optparse = OptionParser.new do |opts|
   $options[:address] = '0.0.0.0'
   opts.on( '-a ADDRESS', '--address ADDRESS', "Listen on ADDRESS ip. Defaults to [#{$options[:address]}]") do |address|
     $options[:address] = address
+  end
+
+  $options[:cache_size] = nil
+  opts.on( '--cache-size SIZE', "Turn in-memory caching on and set the maximum cache size. Example: 500K, 10M, 1G") do |size|
+    $options[:cache_size] = case size
+    when /^\d+$/
+      size.to_i
+    when /^\d+kb?$/i
+      size.to_i * 1024 # kilobytes
+    when /^\d+mb?$/i
+      size.to_i * 1024*1024 # megabytes
+    when /^\d+gb?$/i
+      size.to_i * 1024*1024*1000 # gigabytes
+    else
+      warn "Couldn't understand --cache-size #{size}!"
+      exit
+    end
   end
 
   $options[:https_domain] = $options[:address]
@@ -393,7 +422,7 @@ module EventParsers
     BlankLineRE = /^[\n\r]+$/
 
 		def receive_data(data)
-			return unless (data and data.length > 0)
+			return unless (data and data.size > 0)
 
       @last_activity = Time.now
 
@@ -448,7 +477,7 @@ module EventParsers
 			when :entity
 				if parser.entity_size
 					chars_yet_needed = parser.entity_size - parser.entity_pos
-					taking_this_many = [chars_yet_needed, data.length].sort.first
+					taking_this_many = [chars_yet_needed, data.size].sort.first
 					parser.textbuffer << data[0...taking_this_many]
  					leftover_data = data[taking_this_many..-1]
 					parser.entity_pos += taking_this_many
@@ -540,35 +569,91 @@ module Renderers
 end
 require 'UniversalDetector'
 require 'shared-mime-info'
+class File
+  def size
+    File.size(path)
+  end
+end
+
 class FileServer < EventParsers::Http11Parser::Request
+  class << self
+    attr_accessor :cache
+    def cached?(filename)
+      # Serve from cache if it's in the cache and if the file hasn't changed.
+      if cache
+        # Delete from cache if the file's been modified since last cache.
+        cache.delete(filename) if cache.has_key?(filename) && File.mtime(filename) > cache[filename][0][:mtime]
+        cache.has_key?(filename)
+      end
+    end
+    def from_cache(filename)
+      cache[filename][0][:last_accessed_at] = Time.now
+      puts "From cache: #{filename} / #{cache[filename][0][:size]}"
+      [cache[filename][1], cache[filename][0][:content_type]]
+    end
+    def cache?(filename,response_body)
+      # Obviously, don't cache if it's bigger than the cache max size
+      cache && File.exists?(filename) && response_body.size < cache.max_size
+    end
+    def cache!(filename,content_type,response_body)
+      if cache?(filename,response_body)
+        puts "Caching #{filename} / #{response_body.size}"
+        cache[filename] = [
+          {
+            :last_accessed_at => Time.now,
+            :mtime => File.mtime(filename),
+            :size => response_body.size,
+            :content_type => content_type
+          },
+          response_body
+        ]
+      end
+    end
+  end
+
   # This is where the routing is processed.
   def process
     # Get the filename desired
-    filename = resource_uri.sub(/^\//,'')
+    filename, query = resource_uri.split('?',2)
+    @filename = filename.sub(/^\//,'')
     # Default to any file named index.*
-    filename = Dir["index.*"].first if filename.to_s == '' && Dir["index.*"].length > 0
+    @filename = Dir["index.*"].first if filename.to_s == '' && Dir["index.*"].length > 0
     file_extension = (filename.match(/\.([^\.]+)$/) || [])[1]
 
-    if File.exists?(filename) && !File.directory?(filename)
-      content_type = MIME.check(filename).type
-      file_body = File.read(filename)
+    if File.exists?(@filename) && !File.directory?(@filename)
 
-      # If .markdown, render as Markdown
-      if file_extension == 'markdown'
-        file_body = Renderers::Markdown.render_content(file_body)
-        content_type = 'text/html'
-      end
+      # Read from cache if possible
+      file_handle = FileServer.cached?(@filename) ? :from_cache : :from_disk
+      if file_handle == :from_disk
+        if $DEBUG
+          Benchmark.bm do |x|
+            x.report("Getting MIME type") do
+              @content_type = MIME.check(@filename).type
+            end
+          end
+        else
+          @content_type = MIME.check(@filename).type
+        end
 
-      # If .textile, render as Textile
-      if file_extension == 'textile'
-        file_body = Renderers::Textile.render_content(file_body)
-        content_type = 'text/html'
+        file_handle = File.open(@filename)
+
+        # If .markdown, render as Markdown
+        if file_extension == 'markdown'
+          file_handle = Renderers::Markdown.render_content(file_handle.read)
+          @content_type = 'text/html'
+        end
+
+        # If .textile, render as Textile
+        if file_extension == 'textile'
+          file_handle = Renderers::Textile.render_content(file_handle.read)
+          @content_type = 'text/html'
+        end
       end
 
       # Send Response
-      respond!('200 Ok', content_type, file_body)
+      respond!('200 Ok', @content_type, file_handle)
     else
-      respond!('400 Not Found', 'text/plain', "Could not find file: '#{resource_uri}'")
+      respond!('404 Not Found', 'text/plain', "Could not find file: '#{resource_uri}'")
     end
   end
 
@@ -577,23 +662,43 @@ class FileServer < EventParsers::Http11Parser::Request
     connection.halt!
   end
   def respond(status, content_type, body)
-    # Convert to UTF-8 if possible
-    chardet = UniversalDetector::chardet(body)
-    if chardet['confidence'] > 0.7
-      charset = chardet['encoding']
-      body = Iconv.conv('utf-8', charset, body)
-    # else # no conversion
+    if body == :from_cache
+      body, content_type = FileServer.from_cache(@filename)
+    else
+      body = StringIO.new(body.to_s) if !body.is_a?(IO) && body.respond_to?(:to_s)
+      
+      # Convert to UTF-8 if possible
+      chardet = UniversalDetector::chardet(body.read(512)); body.rewind # Detect charset only from the first 512 bytes
+      if chardet['confidence'] > 0.7 && ['utf-8', 'ascii'].include?(chardet['encoding'])
+        if $DEBUG
+          Benchmark.bm do |x|
+            x.report("Converting from #{chardet['encoding']} to UTF-8") do
+              charset = chardet['encoding']
+              body = StringIO.new(Iconv.conv('utf-8', charset, body.read))
+            end
+          end
+        else
+          charset = chardet['encoding']
+          body = StringIO.new(Iconv.conv('utf-8', charset, body.read))
+        end
+      else # no conversion
+        puts "No charset conversion necessary." if $DEBUG
+      end
+
+      # Write to cache if we should
+      FileServer.cache!(@filename, content_type, body)
     end
-    body_length = body.length
+
+    body_length = body.size
+    body.rewind
 
     # Send the response!
-    connection.send_response! "HTTP/1.1 #{status}\r\nServer: HTTP-Here, version #{$VERSION}\r\nContent-Type: #{content_type}\r\nContent-Length: #{body_length+2}\r\n\r\n#{body}\r\n"
+    connection.send_response! "HTTP/1.1 #{status}\r\nServer: HTTP-Here, version #{$VERSION}\r\nContent-Type: #{content_type}\r\nContent-Length: #{body_length+2}\r\n\r\n#{body.read}\r\n"
     span = (Time.now - connection.time).to_f
-    content_type
     puts (status =~ /200/ ?
       "Served #{resource_uri} (#{content_type})" :
       "404 #{resource_uri}"
-    ) + " at #{1 / span} requests/second"
+    ) + " at #{1 / span} requests/second" unless status =~ /404/ && resource_uri == '/favicon.ico'
   end
 end
 
@@ -630,6 +735,37 @@ class Http11Server
 end
 
 # EventMachineMini.ssl_config[:GenerateSSLCert] = true
+
+class Cache
+  def initialize(config={})
+    @config = config
+    @cache = {}
+  end
+  def max_size
+    @config[:max_size]
+  end
+  def [](key)
+    @cache[key]
+  end
+  def []=(key,value)
+    @cache[key] = value
+  end
+  def has_key?(key)
+    @cache.has_key?(key)
+  end
+  def delete(key)
+    @cache.delete(key)
+  end
+  def bytes
+    @cache.values.inject(0) {|s,v| s+v[0][:size]}
+  end
+end
+
+# Turn Caching on if asked for
+if $options[:cache_size]
+  FileServer.cache = Cache.new(:max_size => $options[:cache_size])
+  puts "Caching files in memory, using up to #{$options[:cache_size]} bytes."
+end
 
 puts "HTTP Here v#{$VERSION} : listening on #{$options[:address]}:#{$options[:port]}..."
 begin
