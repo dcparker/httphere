@@ -36,7 +36,7 @@ optparse = OptionParser.new do |opts|
     $options[:address] = address
   end
 
-  $options[:cache_size] = nil
+  $options[:cache_size] = 1024 # default is to use a 1MB cache
   opts.on( '--cache-size SIZE', "Turn in-memory caching on and set the maximum cache size. Example: 500K, 10M, 1G") do |size|
     $options[:cache_size] = case size
     when /^\d+$/
@@ -617,7 +617,7 @@ class FileServer < EventParsers::Http11Parser::Request
     filename, query = resource_uri.split('?',2)
     @filename = filename.sub(/^\//,'')
     # Default to any file named index.*
-    @filename = Dir["index.*"].first if filename.to_s == '' && Dir["index.*"].length > 0
+    @filename = Dir["index.*"].first if @filename.to_s == '' && Dir["index.*"].length > 0
     file_extension = (filename.match(/\.([^\.]+)$/) || [])[1]
 
     if File.exists?(@filename) && !File.directory?(@filename)
@@ -668,8 +668,8 @@ class FileServer < EventParsers::Http11Parser::Request
       body = StringIO.new(body.to_s) if !body.is_a?(IO) && body.respond_to?(:to_s)
       
       # Convert to UTF-8 if possible
-      chardet = UniversalDetector::chardet(body.read(512)); body.rewind # Detect charset only from the first 512 bytes
-      if chardet['confidence'] > 0.7 && ['utf-8', 'ascii'].include?(chardet['encoding'])
+      chardet = UniversalDetector::chardet(body.read(512)) rescue {'confidence' => 0.8, 'encoding' => 'utf-8'}; body.rewind # Detect charset only from the first 512 bytes
+      if chardet['confidence'] > 0.7 && !['utf-8', 'ascii'].include?(chardet['encoding'])
         if $DEBUG
           Benchmark.bm do |x|
             x.report("Converting from #{chardet['encoding']} to UTF-8") do
